@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" th:href="@{/css/index.css}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Proxy Playback</title>
+</head>
+<body>
+<div class="container">
+    <h1>API Proxy Control Center</h1>
+
+    <div class="status-card">
+        <div class="status-title">Proxy Status</div>
+        <div class="status-value">🟢 Listening on localhost:8080</div>
+    </div>
+
+    <div class="mode-card">
+        <div class="mode-display">
+            <span class="mode-label">Current Mode:</span>
+            <span th:if="${mode.name() == 'RECORD'}" class="mode-status mode-record">
+                    <span class="recording-indicator">
+                        <span class="recording-dot"></span>
+                        Recording
+                    </span>
+                </span>
+            <span th:if="${mode.name() == 'REPLAY'}" class="mode-status mode-replay" th:text="${mode.name()}">REPLAY</span>
+            <span th:if="${mode.name() == 'OFF'}" class="mode-status mode-off" th:text="${mode.name()}">OFF</span>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-section">
+            <div class="control-title">🎛️ Mode Control</div>
+            <form method="post" action="/setMode">
+                <div class="form-group">
+                    <label class="form-label">Select Mode:</label>
+                    <select name="mode" class="form-select">
+                        <option th:selected="${mode.name() == 'OFF'}" value="OFF">🔴 OFF - Proxy Disabled</option>
+                        <option th:selected="${mode.name() == 'RECORD'}" value="RECORD">⏺️ RECORD - Capture Traffic</option>
+                        <option th:selected="${mode.name() == 'REPLAY'}" value="REPLAY">▶️ REPLAY - Playback Mode</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn">Apply Mode</button>
+            </form>
+        </div>
+
+        <div class="control-section">
+            <div class="control-title">📁 Storage Settings</div>
+            <form method="post" action="/setFolder">
+                <div class="form-group">
+                    <label class="form-label">Output Directory:</label>
+                    <input type="text"
+                           name="folder"
+                           class="form-input"
+                           th:value="${folder}"
+                           placeholder="e.g. /tmp/api-recordings" />
+                </div>
+                <button type="submit" class="btn btn-secondary">Update Folder</button>
+            </form>
+        </div>
+    </div>
+</div>
+</body>
+</html>

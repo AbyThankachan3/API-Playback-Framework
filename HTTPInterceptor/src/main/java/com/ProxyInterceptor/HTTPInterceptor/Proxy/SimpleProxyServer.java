@@ -1,24 +1,28 @@
 package com.ProxyInterceptor.HTTPInterceptor.Proxy;
 
+import com.ProxyInterceptor.HTTPInterceptor.Model.ApiLog;
+import com.ProxyInterceptor.HTTPInterceptor.Repository.ApiLogRepository;
 import com.ProxyInterceptor.HTTPInterceptor.Service.ProxyStateService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.eclipse.jetty.client.*;
+import org.eclipse.jetty.client.Request;
+import org.eclipse.jetty.client.Response;
 import org.eclipse.jetty.server.*;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.server.handler.ConnectHandler;
 import org.eclipse.jetty.ee10.proxy.ProxyServlet;
-import org.eclipse.jetty.client.HttpClient;
-import org.eclipse.jetty.client.Request;
-import org.eclipse.jetty.client.Response;
-import org.eclipse.jetty.client.BufferingResponseListener;
-import org.eclipse.jetty.client.Result;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Enumeration;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -26,7 +30,9 @@ import java.util.concurrent.TimeUnit;
 public class SimpleProxyServer {
 
     @Autowired
-    private ProxyStateService stateService;
+    private ApiLogRepository apiLogRepository;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @PostConstruct
     public void start() {
@@ -44,7 +50,12 @@ public class SimpleProxyServer {
                 // 3. Servlet context for HTTP proxying via ProxyServlet
                 ServletContextHandler context = new ServletContextHandler();
                 context.setContextPath("/");
-                context.addServlet(BodyCapturingProxyServlet.class, "/*");
+
+                // Create servlet instance with dependencies
+                BodyCapturingProxyServlet proxyServlet = new BodyCapturingProxyServlet();
+                proxyServlet.setApiLogRepository(apiLogRepository);
+                org.eclipse.jetty.ee10.servlet.ServletHolder servletHolder = new org.eclipse.jetty.ee10.servlet.ServletHolder(proxyServlet);
+                context.addServlet(servletHolder, "/*");
 
                 // 4. ConnectHandler wraps context
                 proxy.setHandler(context);
@@ -60,9 +71,11 @@ public class SimpleProxyServer {
         }, "Advanced-Jetty-Forward-Proxy").start();
     }
 
-    public static class BodyCapturingProxyServlet extends ProxyServlet {
+    public class BodyCapturingProxyServlet extends ProxyServlet {
 
         private HttpClient httpClient;
+        private ApiLogRepository apiLogRepository;
+
 
         @Override
         public void init() throws ServletException {
@@ -78,12 +91,112 @@ public class SimpleProxyServer {
             if (ProxyStateService.INSTANCE.isRecording()) {
                 // Handle recording mode with custom logic
                 handleRecordingMode(request, response);
-            } else {
+            }
+            else if(ProxyStateService.INSTANCE.isReplaying()){
+                // Handle replay mode with custom logic
+                handleReplayMode(request, response);
+            }
+            else {
                 // Normal proxy mode
                 super.service(request, response);
             }
         }
 
+        private void handleReplayMode(HttpServletRequest request, HttpServletResponse response)
+                throws ServletException, IOException {
+
+            try {
+                // 1. Extract method and endpoint from request
+                String method = request.getMethod();
+                String endpoint = buildTargetUrl(request);
+
+                if (endpoint == null) {
+                    response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid target URL");
+                    return;
+                }
+
+                System.out.println("Replaying request: " + method + " " + endpoint);
+
+                // 2. Search for matching API log in database
+                Optional<ApiLog> apiLogOpt = apiLogRepository.findByMethodAndEndpoint(method, endpoint);
+
+                if (apiLogOpt.isPresent()) {
+                    ApiLog apiLog = apiLogOpt.get();
+                    System.out.println("Found matching API log for replay: " + apiLog.getId());
+
+                    // 3. Replay the stored response
+                    replayStoredResponse(apiLog, response);
+                } else {
+                    System.out.println("No matching API log found for: " + method + " " + endpoint);
+                    // Return 404 or fall back to normal proxy mode
+                    response.sendError(HttpServletResponse.SC_NOT_FOUND,
+                            "No recorded response found for " + method + " " + endpoint);
+                }
+
+            } catch (Exception e) {
+                System.err.println("Error in replay mode: " + e.getMessage());
+                e.printStackTrace();
+                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Replay error");
+            }
+        }
+        private void replayStoredResponse(ApiLog apiLog, HttpServletResponse response) throws IOException {
+            try {
+                // Set response status
+
+                response.setStatus(apiLog.getStatusCode());
+
+                // Set response headers from JsonNode
+                if (apiLog.getResponseHeaders() != null) {
+                    setResponseHeadersFromJson(response, apiLog.getResponseHeaders());
+                }
+
+                // Set default content type if not already set
+                if (response.getContentType() == null) {
+                    response.setContentType("application/json");
+                }
+
+                // Write response body from JsonNode
+                if (apiLog.getResponseBody() != null) {
+                    String responseBodyStr = objectMapper.writeValueAsString(apiLog.getResponseBody());
+                    response.getWriter().write(responseBodyStr);
+                } else {
+                    response.getWriter().write("{}"); // Empty JSON response
+                }
+
+                response.getWriter().flush();
+                System.out.println("Successfully replayed response for: " + apiLog.getMethod() + " " + apiLog.getEndpoint());
+
+            } catch (IOException e) {
+                System.err.println("Error writing replay response: " + e.getMessage());
+                throw e;
+            }
+        }
+        private void setResponseHeadersFromJson(HttpServletResponse response, JsonNode responseHeaders) {
+            try {
+                if (responseHeaders.isObject()) {
+                    // Iterate through the JSON object fields
+                    responseHeaders.fields().forEachRemaining(entry -> {
+                        String headerName = entry.getKey();
+                        JsonNode headerValue = entry.getValue();
+
+                        // Skip hop-by-hop headers
+                        if (!isHopByHopHeader(headerName)) {
+                            if (headerValue.isArray()) {
+                                // Handle multiple header values
+                                headerValue.forEach(value -> {
+                                    response.addHeader(headerName, value.asText());
+                                });
+                            } else {
+                                // Single header value
+                                response.addHeader(headerName, headerValue.asText());
+                            }
+                        }
+                    });
+                }
+            } catch (Exception e) {
+                System.err.println("Error setting response headers from JSON: " + e.getMessage());
+            }
+        }
         private void handleRecordingMode(HttpServletRequest request, HttpServletResponse response)
                 throws ServletException, IOException {
 
@@ -112,11 +225,11 @@ public class SimpleProxyServer {
                 proxyRequest.method(wrappedRequest.getMethod());
 
                 // Copy headers (skip host and connection headers)
-                java.util.Enumeration<String> headerNames = wrappedRequest.getHeaderNames();
+                Enumeration<String> headerNames = wrappedRequest.getHeaderNames();
                 while (headerNames.hasMoreElements()) {
                     String headerName = headerNames.nextElement();
                     if (!isHopByHopHeader(headerName)) {
-                        java.util.Enumeration<String> headerValues = wrappedRequest.getHeaders(headerName);
+                        Enumeration<String> headerValues = wrappedRequest.getHeaders(headerName);
                         while (headerValues.hasMoreElements()) {
                             proxyRequest.headers(headers -> headers.add(headerName, headerValues.nextElement()));
                         }
@@ -126,7 +239,7 @@ public class SimpleProxyServer {
                 // Copy body if present
                 byte[] bodyBytes = wrappedRequest.getBodyBytes();
                 if (bodyBytes != null && bodyBytes.length > 0) {
-                    proxyRequest.body(new org.eclipse.jetty.client.BytesRequestContent(bodyBytes));
+                    proxyRequest.body(new BytesRequestContent(bodyBytes));
                 }
 
                 // 4. Send request and capture response
@@ -253,6 +366,10 @@ public class SimpleProxyServer {
                                               Throwable failure) {
             System.out.println("Proxy response failed: " + failure.getMessage());
             super.onProxyResponseFailure(clientRequest, proxyResponse, serverResponse, failure);
+        }
+
+        public void setApiLogRepository(ApiLogRepository apiLogRepository) {
+            this.apiLogRepository = apiLogRepository;
         }
     }
 }

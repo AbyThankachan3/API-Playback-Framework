@@ -93,6 +93,31 @@
 			<artifactId>hypersistence-utils-hibernate-60</artifactId>
 			<version>3.9.0</version>
 		</dependency>
+
+		<dependency>
+			<groupId>co.elastic.clients</groupId>
+			<artifactId>elasticsearch-java</artifactId>
+			<version>8.13.4</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.fasterxml.jackson.datatype</groupId>
+			<artifactId>jackson-datatype-jsr310</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>dev.langchain4j</groupId>
+			<artifactId>langchain4j</artifactId>
+			<version>0.26.0</version>
+		</dependency>
+
+		<!-- Vertex AI integration -->
+		<dependency>
+			<groupId>dev.langchain4j</groupId>
+			<artifactId>langchain4j-vertex-ai</artifactId>
+			<version>0.26.0</version>
+		</dependency>
+
 	</dependencies>
 
 	<build>

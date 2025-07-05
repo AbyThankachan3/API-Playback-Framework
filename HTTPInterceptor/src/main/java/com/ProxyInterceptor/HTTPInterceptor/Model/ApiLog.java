@@ -57,5 +57,8 @@ public class ApiLog {
 
     private Instant createdAt;
 
+    @Column(name = "embedding")
+    private float[] embedding;
+
 
 }

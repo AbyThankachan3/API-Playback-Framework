@@ -1,5 +1,6 @@
 package com.ProxyInterceptor.HTTPInterceptor.Service;
 
+import com.ProxyInterceptor.HTTPInterceptor.Elastic.ElasticLogService;
 import com.ProxyInterceptor.HTTPInterceptor.Model.ApiLog;
 import com.ProxyInterceptor.HTTPInterceptor.Model.RecordingState;
 import com.ProxyInterceptor.HTTPInterceptor.Proxy.CachedBodyHttpServletRequest;
@@ -44,7 +45,14 @@ public class ProxyStateService {
     // Store request-response pairs
     private final ConcurrentHashMap<String, ObjectNode> pendingRequests = new ConcurrentHashMap<>();
 
-    public ProxyStateService() {
+    @Autowired
+    private final ElasticLogService elasticLogService;
+    private final EmbeddingModel embeddingModel;
+
+
+    public ProxyStateService(ElasticLogService elasticLogService, EmbeddingModel embeddingModel) {
+        this.elasticLogService = elasticLogService;
+        this.embeddingModel = embeddingModel;
         // Set the static instance when Spring creates this bean
         INSTANCE = this;
         // Ensure recordings directory exists
@@ -263,9 +271,15 @@ public class ProxyStateService {
             log.setParameters(requestJson.get("parameters"));
             log.setHeaders(requestJson.get("headers"));
             log.setResponseHeaders(responseJson.get("headers"));
-            apiLogRepository.save(log);
+//            apiLogRepository.save(log);
             System.out.println("Saved transaction to database with method: " + log.getMethod() + ", endpoint: " + log.getEndpoint());
 
+
+            float[] vector = embeddingModel.createEmbedding(log);
+            log.setEmbedding(vector);
+            apiLogRepository.save(log);
+            elasticLogService.saveToElastic(log);
+            System.out.println("DB query added to elastic.");
 
         } catch (Exception e) {
             System.err.println("Error recording response with body: " + e.getMessage());

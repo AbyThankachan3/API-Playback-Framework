@@ -1,7 +1,9 @@
 package com.ProxyInterceptor.HTTPInterceptor.Proxy;
 
+import com.ProxyInterceptor.HTTPInterceptor.Elastic.ElasticLogService;
 import com.ProxyInterceptor.HTTPInterceptor.Model.ApiLog;
 import com.ProxyInterceptor.HTTPInterceptor.Repository.ApiLogRepository;
+import com.ProxyInterceptor.HTTPInterceptor.Service.EmbeddingModel;
 import com.ProxyInterceptor.HTTPInterceptor.Service.ProxyStateService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -22,6 +24,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -36,6 +39,14 @@ public class SimpleProxyServer {
     private final ObjectMapper objectMapper = new ObjectMapper();
     @Autowired
     private ProxyStateService proxyStateService;
+
+    private final EmbeddingModel embeddingModel;
+    private final ElasticLogService elasticLogService;
+
+    public SimpleProxyServer(EmbeddingModel embeddingModel, ElasticLogService elasticLogService) {
+        this.embeddingModel = embeddingModel;
+        this.elasticLogService = elasticLogService;
+    }
 
     @PostConstruct
     public void start() {
@@ -112,7 +123,8 @@ public class SimpleProxyServer {
                 // 1. Extract method and endpoint from request
                 String method = request.getMethod();
                 String endpoint = buildTargetUrl(request);
-
+                System.out.println(endpoint);
+                boolean vector_search = true;
                 if (endpoint == null) {
                     response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid target URL");
                     return;
@@ -134,32 +146,53 @@ public class SimpleProxyServer {
                     }
 
                     // Step 2: Headers
-                    String headersJson = convertFilteredHeadersToJson(request);
-                    ids = apiLogRepository.filterIdsByHeaders(ids, headersJson);
-
-                    if (ids.isEmpty()) {
-                        response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after header filtering");
-                        return;
-                    }
-                    if (ids.size() == 1) {
-                        replay(apiLogRepository.findById(ids.get(0)), response);
-                        return;
-                    }
-                    // Step 3: Partial body
-                    String bodyJson = extractPartialBodyAsJson(request).toString();
-                    ids = apiLogRepository.filterIdsByExactBody(ids, bodyJson);
-
-                    if (ids.isEmpty()) {
-                        response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after body filtering");
-                        return;
-                    }
-                    if (ids.size() == 1) {
-                        replay(apiLogRepository.findById(ids.get(0)), response);
-                        return;
-                    }
                     // Final fallback: pick most recent
-                    List<ApiLog> candidates = apiLogRepository.fetchFullLogsByIds(ids);
-                    replay(Optional.of(candidates.get(0)), response);
+//                    String headersJson = convertFilteredHeadersToJson(request);
+//                    ids = apiLogRepository.filterIdsByHeaders(ids, headersJson);
+//
+//                    if (ids.isEmpty()) {
+////                        response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after header filtering");
+//                        vector_search = true;
+//                    }
+//                    if (ids.size() == 1) {
+//                        replay(apiLogRepository.findById(ids.get(0)), response);
+//                        return;
+//                    }
+//                    // Step 3: Partial body
+                    JsonNode body = extractPartialBodyAsJson(request);
+                    String bodyJson = extractPartialBodyAsJson(request).toString();
+//                    ids = apiLogRepository.filterIdsByExactBody(ids, bodyJson);
+//
+//                    if (ids.isEmpty()) {
+////                        response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after body filtering");
+//                        vector_search = true;
+//                    }
+//                    if (ids.size() == 1) {
+//                        replay(apiLogRepository.findById(ids.get(0)), response);
+//                        return;
+//                    }
+                    if (!vector_search)
+                    {
+                        List<ApiLog> candidates = apiLogRepository.fetchFullLogsByIds(ids);
+                        replay(Optional.of(candidates.get(0)), response);
+                    }
+                    else
+                    {
+                        //Perform vector search
+                        System.out.println("Performing vector search");
+                        String embedd_string  = method+endpoint+bodyJson;
+                        ApiLog querylog = new ApiLog();
+                        querylog.setMethod(method);
+                        querylog.setEndpoint(endpoint);
+                        querylog.setCreatedAt(Instant.now());
+                        querylog.setRequestBody(body);
+                        apiLogRepository.save(querylog);
+
+                        float[] vector_query =embeddingModel.createEmbedding(querylog);
+                        List<ApiLog> semantic_similar_query =  elasticLogService.searchFilteredByMethodEndpoint(method,endpoint,vector_query,3);
+                        replay(Optional.of(semantic_similar_query.get(0)), response);
+
+                    }
                 }
                 else{
                     System.out.println("Replaying request for user configured fields: " + proxyStateService.getCaptureFields() );
@@ -174,7 +207,7 @@ public class SimpleProxyServer {
                     if (!candidates.isEmpty()){
                         replay(Optional.of(candidates.get(0)), response);
                     }else{
-                        //rely on semantics
+                        //Route to the backend
                         System.out.println("No match found after filtering based on user specified config.");
                     }
                 }
@@ -379,9 +412,9 @@ public class SimpleProxyServer {
             if (host != null && !host.isEmpty()) {
                 String scheme = request.isSecure() ? "https" : "http";
                 targetUrl = scheme + "://" + host + requestUri;
-                if (queryString != null && !queryString.isEmpty()) {
-                    targetUrl += "?" + queryString;
-                }
+//                if (queryString != null && !queryString.isEmpty()) {
+//                    targetUrl += "?" + queryString;
+//                }
             }
 
             return targetUrl;

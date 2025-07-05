@@ -1,0 +1,49 @@
+{
+  "request" : {
+    "timestamp" : "2025-06-29T21:20:03.715576400",
+    "method" : "POST",
+    "url" : "http://localhost:8085/auth/login",
+    "queryString" : null,
+    "protocol" : "HTTP/1.1",
+    "remoteAddr" : "[0:0:0:0:0:0:0:1]",
+    "contentType" : "application/json",
+    "contentLength" : 84,
+    "headers" : {
+      "Content-Type" : [ "application/json" ],
+      "User-Agent" : [ "PostmanRuntime/7.44.1" ],
+      "Accept" : [ "*/*" ],
+      "Postman-Token" : [ "c646b180-a5ef-407e-ad8f-2b16d2af0f11" ],
+      "Host" : [ "localhost:8085" ],
+      "Accept-Encoding" : [ "gzip, deflate, br" ],
+      "Connection" : [ "keep-alive" ],
+      "Content-Length" : [ "84" ]
+    },
+    "parameters" : { },
+    "body" : {
+      "email" : "abythankachan.314@gmail.com",
+      "password" : "Abythankachan@123"
+    }
+  },
+  "response" : {
+    "timestamp" : "2025-06-29T21:20:04.317158100",
+    "status" : 202,
+    "reason" : null,
+    "version" : "HTTP/1.1",
+    "headers" : {
+      "Vary" : [ "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers" ],
+      "Set-Cookie" : [ "jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYnl0aGFua2FjaGFuLjMxNEBnbWFpbC5jb20iLCJpYXQiOjE3NTEyMTIyMDQsImV4cCI6MTc1MTIxMzEwNH0.0dq5NdFNMG0YcFSfK5WkX66Z3PuFOb3aVhfNoXBuPpo; Max-Age=86400; Path=/; Secure; HttpOnly; SameSite=None", "refresh=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYnl0aGFua2FjaGFuLjMxNEBnbWFpbC5jb20iLCJpYXQiOjE3NTEyMTIyMDQsImV4cCI6MTc1MTgxNzAwNH0.ONXd_DacJ_J3z2qPxGZ0cquYrMJ4ncBLYx91-Twf-WM; Max-Age=604800; Path=/; Secure; HttpOnly; SameSite=None" ],
+      "X-Content-Type-Options" : "nosniff",
+      "X-XSS-Protection" : "0",
+      "Cache-Control" : "no-cache, no-store, max-age=0, must-revalidate",
+      "Pragma" : "no-cache",
+      "Expires" : "0",
+      "X-Frame-Options" : "DENY",
+      "Content-Type" : "application/json",
+      "Transfer-Encoding" : "chunked",
+      "Date" : "Sun, 29 Jun 2025 15:50:04 GMT"
+    },
+    "body" : {
+      "message" : "Login successful"
+    }
+  }
+}

@@ -55,9 +55,6 @@ public class ApiLog {
     @Column(name = "responseHeaders", columnDefinition = "jsonb")
     private JsonNode responseHeaders;
 
-
-
-
     private Instant createdAt;
 
 

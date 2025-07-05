@@ -3,6 +3,7 @@ package com.ProxyInterceptor.HTTPInterceptor.Proxy;
 import com.ProxyInterceptor.HTTPInterceptor.Model.ApiLog;
 import com.ProxyInterceptor.HTTPInterceptor.Repository.ApiLogRepository;
 import com.ProxyInterceptor.HTTPInterceptor.Service.ProxyStateService;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
@@ -21,10 +22,10 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Enumeration;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Component
 public class SimpleProxyServer {
@@ -33,6 +34,8 @@ public class SimpleProxyServer {
     private ApiLogRepository apiLogRepository;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    @Autowired
+    private ProxyStateService proxyStateService;
 
     @PostConstruct
     public void start() {
@@ -49,7 +52,7 @@ public class SimpleProxyServer {
 
                 // 3. Servlet context for HTTP proxying via ProxyServlet
                 ServletContextHandler context = new ServletContextHandler();
-                context.setContextPath("/");
+                context.setContextPath("/"); // to handle all traffic that goes through the proxy
 
                 // Create servlet instance with dependencies
                 BodyCapturingProxyServlet proxyServlet = new BodyCapturingProxyServlet();
@@ -117,20 +120,63 @@ public class SimpleProxyServer {
 
                 System.out.println("Replaying request: " + method + " " + endpoint);
 
-                // 2. Search for matching API log in database
-                Optional<ApiLog> apiLogOpt = apiLogRepository.findByMethodAndEndpoint(method, endpoint);
+                if(proxyStateService.getCaptureFields().isEmpty()){
+                    List<Long> ids = apiLogRepository.findIdsByMethodAndEndpoint(method, endpoint);
 
-                if (apiLogOpt.isPresent()) {
-                    ApiLog apiLog = apiLogOpt.get();
-                    System.out.println("Found matching API log for replay: " + apiLog.getId());
+                    if (ids.isEmpty()) {
+                        response.sendError(HttpServletResponse.SC_NOT_FOUND,
+                                "No recorded response found for " + method + " " + endpoint);
+                        return;
+                    }
+                    if (ids.size() == 1) {
+                        replay(apiLogRepository.findById(ids.get(0)), response);
+                        return;
+                    }
 
-                    // 3. Replay the stored response
-                    replayStoredResponse(apiLog, response);
-                } else {
-                    System.out.println("No matching API log found for: " + method + " " + endpoint);
-                    // Return 404 or fall back to normal proxy mode
-                    response.sendError(HttpServletResponse.SC_NOT_FOUND,
-                            "No recorded response found for " + method + " " + endpoint);
+                    // Step 2: Headers
+                    String headersJson = convertFilteredHeadersToJson(request);
+                    ids = apiLogRepository.filterIdsByHeaders(ids, headersJson);
+
+                    if (ids.isEmpty()) {
+                        response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after header filtering");
+                        return;
+                    }
+                    if (ids.size() == 1) {
+                        replay(apiLogRepository.findById(ids.get(0)), response);
+                        return;
+                    }
+                    // Step 3: Partial body
+                    String bodyJson = extractPartialBodyAsJson(request).toString();
+                    ids = apiLogRepository.filterIdsByExactBody(ids, bodyJson);
+
+                    if (ids.isEmpty()) {
+                        response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after body filtering");
+                        return;
+                    }
+                    if (ids.size() == 1) {
+                        replay(apiLogRepository.findById(ids.get(0)), response);
+                        return;
+                    }
+                    // Final fallback: pick most recent
+                    List<ApiLog> candidates = apiLogRepository.fetchFullLogsByIds(ids);
+                    replay(Optional.of(candidates.get(0)), response);
+                }
+                else{
+                    System.out.println("Replaying request for user configured fields: " + proxyStateService.getCaptureFields() );
+                    List<String> capturedFields = proxyStateService.getCaptureFields();
+                    boolean match_method = capturedFields.contains("method");
+                    boolean match_endpoint = capturedFields.contains("endpoint");
+                    boolean match_headers = capturedFields.contains("headers");
+                    boolean match_request_body = capturedFields.contains("body");
+                    String headers = convertFilteredHeadersToJson(request);
+                    String body = extractPartialBodyAsJson(request).toString();
+                    List<ApiLog> candidates = apiLogRepository.findMatchingLogs(match_method, method, match_endpoint, endpoint, match_headers, headers, match_request_body, body );
+                    if (!candidates.isEmpty()){
+                        replay(Optional.of(candidates.get(0)), response);
+                    }else{
+                        //rely on semantics
+                        System.out.println("No match found after filtering based on user specified config.");
+                    }
                 }
 
             } catch (Exception e) {
@@ -138,6 +184,42 @@ public class SimpleProxyServer {
                 e.printStackTrace();
                 response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Replay error");
             }
+        }
+        private void replay(Optional<ApiLog> maybeLog, HttpServletResponse response) throws IOException {
+            if (maybeLog.isPresent()) {
+                System.out.println("Replaying API Log: " + maybeLog.get().getId());
+                replayStoredResponse(maybeLog.get(), response);
+            } else {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Matching log not found.");
+            }
+        }
+        private String convertQueryParamsToJson(HttpServletRequest request) throws JsonProcessingException {
+            Map<String, String[]> params = request.getParameterMap();
+            Map<String, String> flatParams = new HashMap<>();
+            for (Map.Entry<String, String[]> entry : params.entrySet()) {
+                flatParams.put(entry.getKey(), entry.getValue()[0]);
+            }
+            return new ObjectMapper().writeValueAsString(flatParams);
+        }
+        private String convertFilteredHeadersToJson(HttpServletRequest request) throws JsonProcessingException {
+            Set<String> ignoredHeaders = Set.of("User-Agent", "Cookie", "Authorization", "connection"
+            , "keep-alive", "accept-encoding", "proxy-authenticate", "proxy-authorization",
+                    "te", "trailers", "transfer-encoding", "upgrade", "Postman-Token", "Content-Length");
+            Map<String, List<String>> headers = new HashMap<>();
+            Enumeration<String> headerNames = request.getHeaderNames();
+            while (headerNames.hasMoreElements()) {
+                String name = headerNames.nextElement();
+                if (!ignoredHeaders.contains(name)) {
+                    List<String> values = Collections.list(request.getHeaders(name));
+                    headers.put(name, values);
+                }
+            }
+            System.out.println(new ObjectMapper().writeValueAsString(headers));
+            return new ObjectMapper().writeValueAsString(headers);
+        }
+        private JsonNode extractPartialBodyAsJson(HttpServletRequest request) throws IOException {
+            String body = request.getReader().lines().collect(Collectors.joining(System.lineSeparator()));
+            return new ObjectMapper().readTree(body);
         }
         private void replayStoredResponse(ApiLog apiLog, HttpServletResponse response) throws IOException {
             try {

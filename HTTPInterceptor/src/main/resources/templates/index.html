@@ -60,6 +60,126 @@
             </form>
         </div>
     </div>
+
+    <div class="capture-fields-section">
+        <div class="control-title">🎯 Compare Fields</div>
+        <form method="post" action="/setCaptureFields">
+            <div class="checkbox-grid">
+                <div class="checkbox-item">
+                    <input type="checkbox" id="method" name="captureFields" value="method"
+                           th:checked="${captureFields != null && captureFields.contains('method')}">
+                    <label for="method" class="checkbox-label">
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">Method</span>
+                    </label>
+                </div>
+
+                <div class="checkbox-item">
+                    <input type="checkbox" id="path" name="captureFields" value="endpoint"
+                           th:checked="${captureFields != null && captureFields.contains('endpoint')}">
+                    <label for="path" class="checkbox-label">
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">Path</span>
+                    </label>
+                </div>
+
+                <div class="checkbox-item">
+                    <input type="checkbox" id="pathParameters" name="captureFields" value="parameters"
+                           th:checked="${captureFields != null && captureFields.contains('parameters')}">
+                    <label for="pathParameters" class="checkbox-label">
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">Path Parameters</span>
+                    </label>
+                </div>
+
+<!--                <div class="checkbox-item">-->
+<!--                    <input type="checkbox" id="queryString" name="captureFields" value="queryString"-->
+<!--                           th:checked="${captureFields != null && captureFields.contains('queryString')}">-->
+<!--                    <label for="queryString" class="checkbox-label">-->
+<!--                        <span class="checkbox-custom"></span>-->
+<!--                        <span class="checkbox-text">Query String Parameters</span>-->
+<!--                    </label>-->
+<!--                </div>-->
+
+                <div class="checkbox-item">
+                    <input type="checkbox" id="headers" name="captureFields" value="headers"
+                           th:checked="${captureFields != null && captureFields.contains('headers')}">
+                    <label for="headers" class="checkbox-label">
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">Headers</span>
+                    </label>
+                </div>
+
+<!--                <div class="checkbox-item">-->
+<!--                    <input type="checkbox" id="cookies" name="captureFields" value="cookies"-->
+<!--                           th:checked="${captureFields != null && captureFields.contains('cookies')}">-->
+<!--                    <label for="cookies" class="checkbox-label">-->
+<!--                        <span class="checkbox-custom"></span>-->
+<!--                        <span class="checkbox-text">Cookies</span>-->
+<!--                    </label>-->
+<!--                </div>-->
+
+                <div class="checkbox-item">
+                    <input type="checkbox" id="body" name="captureFields" value="body"
+                           th:checked="${captureFields != null && captureFields.contains('body')}">
+                    <label for="body" class="checkbox-label">
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">Body</span>
+                    </label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="responsecode2xx" name="captureFields" value="rscode:2xx"
+                           th:checked="${captureFields != null && captureFields.contains('rscode:2xx')}">
+                    <label for="responsecode2xx" class="checkbox-label">
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">Response Code: 2xx</span>
+                    </label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="responsecode3xx" name="captureFields" value="rscode:3xx"
+                           th:checked="${captureFields != null && captureFields.contains('rscode:3xx')}">
+                    <label for="responsecode2xx" class="checkbox-label">
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">Response Code: 3xx</span>
+                    </label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="responsecode4xx" name="captureFields" value="rscode:4xx"
+                           th:checked="${captureFields != null && captureFields.contains('rscode:4xx')}">
+                    <label for="responsecode2xx" class="checkbox-label">
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">Response Code: 4xx</span>
+                    </label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="responsecode5xx" name="captureFields" value="rscode:5xx"
+                           th:checked="${captureFields != null && captureFields.contains('rscode:5xx')}">
+                    <label for="responsecode5xx" class="checkbox-label">
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">Response Code: 5xx</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-capture">Update Capture Fields</button>
+                <button type="button" class="btn btn-outline" onclick="selectAll()">Select All</button>
+                <button type="button" class="btn btn-outline" onclick="clearAll()">Clear All</button>
+            </div>
+        </form>
+    </div>
 </div>
+
+<script>
+    function selectAll() {
+        const checkboxes = document.querySelectorAll('input[name="captureFields"]');
+        checkboxes.forEach(checkbox => checkbox.checked = true);
+    }
+
+    function clearAll() {
+        const checkboxes = document.querySelectorAll('input[name="captureFields"]');
+        checkboxes.forEach(checkbox => checkbox.checked = false);
+    }
+</script>
 </body>
 </html>

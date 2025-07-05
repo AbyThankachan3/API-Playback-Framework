@@ -2,6 +2,7 @@ package com.ProxyInterceptor.HTTPInterceptor.Service;
 
 import com.ProxyInterceptor.HTTPInterceptor.Model.ApiLog;
 import com.ProxyInterceptor.HTTPInterceptor.Model.RecordingState;
+import com.ProxyInterceptor.HTTPInterceptor.Proxy.CachedBodyHttpServletRequest;
 import com.ProxyInterceptor.HTTPInterceptor.Repository.ApiLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -10,6 +11,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
+import lombok.Getter;
+import lombok.Setter;
 import org.eclipse.jetty.client.Response;
 import org.eclipse.jetty.http.HttpField;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,9 +26,7 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -34,6 +35,9 @@ public class ProxyStateService {
     private RecordingState mode = RecordingState.OFF;
     private Path outputFolder = Paths.get("recordings");
     private final ObjectMapper objectMapper = new ObjectMapper();
+    @Getter
+    @Setter
+    private List<String> captureFields = new ArrayList<>();
 
     @Autowired
     private ApiLogRepository apiLogRepository;
@@ -82,6 +86,10 @@ public class ProxyStateService {
         return this.mode == RecordingState.REPLAY;
     }
 
+    public boolean shouldCaptureField(String fieldName) {
+        return captureFields.contains(fieldName);
+    }
+
     private void addFormattedBody(ObjectNode parentNode, String body, String contentType, String bodyFieldName) {
         if (body == null || body.trim().isEmpty()) {
             parentNode.put(bodyFieldName, "");
@@ -105,7 +113,7 @@ public class ProxyStateService {
     }
 
 
-    public String recordRequestWithBody(com.ProxyInterceptor.HTTPInterceptor.Proxy.CachedBodyHttpServletRequest req) {
+    public String recordRequestWithBody(CachedBodyHttpServletRequest req) {
         try {
             System.out.println("recordRequestWithBody called for: " + req.getMethod() + " " + req.getRequestURL());
 

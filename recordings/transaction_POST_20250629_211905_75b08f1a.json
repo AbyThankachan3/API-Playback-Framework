@@ -1,0 +1,47 @@
+{
+  "request" : {
+    "timestamp" : "2025-06-29T21:19:05.213308200",
+    "method" : "POST",
+    "url" : "http://localhost:8085/auth/login",
+    "queryString" : null,
+    "protocol" : "HTTP/1.1",
+    "remoteAddr" : "[0:0:0:0:0:0:0:1]",
+    "contentType" : "application/json",
+    "contentLength" : 84,
+    "headers" : {
+      "Content-Type" : [ "application/json" ],
+      "User-Agent" : [ "PostmanRuntime/7.44.1" ],
+      "Accept" : [ "*/*" ],
+      "Postman-Token" : [ "ec05440c-1826-422f-ad82-66d30fffdcbc" ],
+      "Host" : [ "localhost:8085" ],
+      "Accept-Encoding" : [ "gzip, deflate, br" ],
+      "Connection" : [ "keep-alive" ],
+      "Content-Length" : [ "84" ],
+      "Cookie" : [ "jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYnl0aGFua2FjaGFuLjMxNEBnbWFpbC5jb20iLCJpYXQiOjE3NTA4NjU0NDUsImV4cCI6MTc1MDg2NjM0NX0.GwHUF1Aa8_tDQvItl14S5yKyohihN1t7I8ChGZTj56I; refresh=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYnl0aGFua2FjaGFuLjMxNEBnbWFpbC5jb20iLCJpYXQiOjE3NTA4NjU0NDUsImV4cCI6MTc1MTQ3MDI0NX0.hBFI2P_0RXFiVTQ0Ymt1M2_TWXV93xmXLBijPGmETkQ" ]
+    },
+    "parameters" : { },
+    "body" : {
+      "email" : "abythankachan.314@gmail.com",
+      "password" : "Abythankachan@123"
+    }
+  },
+  "response" : {
+    "timestamp" : "2025-06-29T21:19:05.570420900",
+    "status" : 401,
+    "reason" : null,
+    "version" : "HTTP/1.1",
+    "headers" : {
+      "Vary" : [ "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers" ],
+      "X-Content-Type-Options" : "nosniff",
+      "X-XSS-Protection" : "0",
+      "Cache-Control" : "no-cache, no-store, max-age=0, must-revalidate",
+      "Pragma" : "no-cache",
+      "Expires" : "0",
+      "X-Frame-Options" : "DENY",
+      "WWW-Authenticate" : "Basic realm=\"Realm\"",
+      "Content-Length" : "0",
+      "Date" : "Sun, 29 Jun 2025 15:49:05 GMT"
+    },
+    "body" : ""
+  }
+}

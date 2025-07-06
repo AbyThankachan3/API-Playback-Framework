@@ -46,17 +46,20 @@
         </div>
 
         <div class="control-section">
-            <div class="control-title">📁 Storage Settings</div>
-            <form method="post" action="/setFolder">
+            <div class="control-title">Replay Mode</div>
+            <form method="post" action="/setReplayMode">
                 <div class="form-group">
-                    <label class="form-label">Output Directory:</label>
-                    <input type="text"
-                           name="folder"
-                           class="form-input"
-                           th:value="${folder}"
-                           placeholder="e.g. /tmp/api-recordings" />
+                    <label class="form-label">Select Replay Mode:</label><br>
+                    <label>
+                        <input type="radio" name="replayMode" value="db"
+                               th:checked="${currentMode == 'db'}">DB Match (default)
+                    </label><br>
+                    <label>
+                        <input type="radio" name="replayMode" value="vector"
+                               th:checked="${currentMode == 'vector'}"> Vector Search
+                    </label>
                 </div>
-                <button type="submit" class="btn btn-secondary">Update Folder</button>
+                <button type="submit" class="btn btn-primary">Apply Mode</button>
             </form>
         </div>
     </div>
@@ -84,22 +87,13 @@
                 </div>
 
                 <div class="checkbox-item">
-                    <input type="checkbox" id="pathParameters" name="captureFields" value="parameters"
+                    <input type="checkbox" id="queryParameters" name="captureFields" value="parameters"
                            th:checked="${captureFields != null && captureFields.contains('parameters')}">
-                    <label for="pathParameters" class="checkbox-label">
+                    <label for="queryParameters" class="checkbox-label">
                         <span class="checkbox-custom"></span>
-                        <span class="checkbox-text">Path Parameters</span>
+                        <span class="checkbox-text">Query Parameters</span>
                     </label>
                 </div>
-
-<!--                <div class="checkbox-item">-->
-<!--                    <input type="checkbox" id="queryString" name="captureFields" value="queryString"-->
-<!--                           th:checked="${captureFields != null && captureFields.contains('queryString')}">-->
-<!--                    <label for="queryString" class="checkbox-label">-->
-<!--                        <span class="checkbox-custom"></span>-->
-<!--                        <span class="checkbox-text">Query String Parameters</span>-->
-<!--                    </label>-->
-<!--                </div>-->
 
                 <div class="checkbox-item">
                     <input type="checkbox" id="headers" name="captureFields" value="headers"
@@ -128,32 +122,32 @@
                     </label>
                 </div>
                 <div class="checkbox-item">
-                    <input type="checkbox" id="responsecode2xx" name="captureFields" value="rscode:2xx"
-                           th:checked="${captureFields != null && captureFields.contains('rscode:2xx')}">
+                    <input type="checkbox" id="responsecode2xx" name="captureFields" value="rscode2xx"
+                           th:checked="${captureFields != null && captureFields.contains('rscode2xx')}">
                     <label for="responsecode2xx" class="checkbox-label">
                         <span class="checkbox-custom"></span>
                         <span class="checkbox-text">Response Code: 2xx</span>
                     </label>
                 </div>
                 <div class="checkbox-item">
-                    <input type="checkbox" id="responsecode3xx" name="captureFields" value="rscode:3xx"
-                           th:checked="${captureFields != null && captureFields.contains('rscode:3xx')}">
-                    <label for="responsecode2xx" class="checkbox-label">
+                    <input type="checkbox" id="responsecode3xx" name="captureFields" value="rscode3xx"
+                           th:checked="${captureFields != null && captureFields.contains('rscode3xx')}">
+                    <label for="responsecode3xx" class="checkbox-label">
                         <span class="checkbox-custom"></span>
                         <span class="checkbox-text">Response Code: 3xx</span>
                     </label>
                 </div>
                 <div class="checkbox-item">
-                    <input type="checkbox" id="responsecode4xx" name="captureFields" value="rscode:4xx"
-                           th:checked="${captureFields != null && captureFields.contains('rscode:4xx')}">
-                    <label for="responsecode2xx" class="checkbox-label">
+                    <input type="checkbox" id="responsecode4xx" name="captureFields" value="rscode4xx"
+                           th:checked="${captureFields != null && captureFields.contains('rscode4xx')}">
+                    <label for="responsecode4xx" class="checkbox-label">
                         <span class="checkbox-custom"></span>
                         <span class="checkbox-text">Response Code: 4xx</span>
                     </label>
                 </div>
                 <div class="checkbox-item">
-                    <input type="checkbox" id="responsecode5xx" name="captureFields" value="rscode:5xx"
-                           th:checked="${captureFields != null && captureFields.contains('rscode:5xx')}">
+                    <input type="checkbox" id="responsecode5xx" name="captureFields" value="rscode5xx"
+                           th:checked="${captureFields != null && captureFields.contains('rscode5xx')}">
                     <label for="responsecode5xx" class="checkbox-label">
                         <span class="checkbox-custom"></span>
                         <span class="checkbox-text">Response Code: 5xx</span>

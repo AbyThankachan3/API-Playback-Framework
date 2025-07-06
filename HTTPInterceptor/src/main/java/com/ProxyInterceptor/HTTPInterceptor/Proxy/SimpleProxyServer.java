@@ -8,6 +8,7 @@ import com.ProxyInterceptor.HTTPInterceptor.Service.ProxyStateService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.NullNode;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,6 +20,8 @@ import org.eclipse.jetty.server.*;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.server.handler.ConnectHandler;
 import org.eclipse.jetty.ee10.proxy.ProxyServlet;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -32,6 +35,8 @@ import java.util.stream.Collectors;
 
 @Component
 public class SimpleProxyServer {
+
+    private static final Logger logger = LoggerFactory.getLogger(SimpleProxyServer.class);
 
     @Autowired
     private ApiLogRepository apiLogRepository;
@@ -76,17 +81,18 @@ public class SimpleProxyServer {
                 server.setHandler(proxy);
 
                 server.start();
-                System.out.println("Jetty Forward Proxy started on http://localhost:8080");
+                logger.info("Jetty Forward Proxy started on http://localhost:8080");
                 server.join();
 
             } catch (Exception e) {
-                e.printStackTrace();
+                logger.error("Error starting proxy server", e);
             }
         }, "Advanced-Jetty-Forward-Proxy").start();
     }
 
     public class BodyCapturingProxyServlet extends ProxyServlet {
 
+        private static final Logger servletLogger = LoggerFactory.getLogger(BodyCapturingProxyServlet.class);
         private HttpClient httpClient;
         private ApiLogRepository apiLogRepository;
 
@@ -102,13 +108,14 @@ public class SimpleProxyServer {
         protected void service(HttpServletRequest request, HttpServletResponse response)
                 throws ServletException, IOException {
 
+            CachedBodyHttpServletRequest wrappedRequest = new CachedBodyHttpServletRequest(request);
             if (ProxyStateService.INSTANCE.isRecording()) {
                 // Handle recording mode with custom logic
-                handleRecordingMode(request, response);
+                handleRecordingMode(wrappedRequest, response);
             }
             else if(ProxyStateService.INSTANCE.isReplaying()){
                 // Handle replay mode with custom logic
-                handleReplayMode(request, response);
+                handleReplayMode(wrappedRequest, response);
             }
             else {
                 // Normal proxy mode
@@ -116,111 +123,140 @@ public class SimpleProxyServer {
             }
         }
 
-        private void handleReplayMode(HttpServletRequest request, HttpServletResponse response)
+        private void handleReplayMode(CachedBodyHttpServletRequest request, HttpServletResponse response)
                 throws ServletException, IOException {
 
             try {
                 // 1. Extract method and endpoint from request
                 String method = request.getMethod();
-                String endpoint = buildTargetUrl(request);
-                System.out.println(endpoint);
-                boolean vector_search = true;
+                String endpoint = request.getRequestURL().toString();
+
                 if (endpoint == null) {
                     response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid target URL");
                     return;
                 }
 
-                System.out.println("Replaying request: " + method + " " + endpoint);
+                servletLogger.info("Replaying request: {} {}", method, endpoint);
 
-                if(proxyStateService.getCaptureFields().isEmpty()){
+                if(proxyStateService.getReplayMode().equals("db") && proxyStateService.getCaptureFields().isEmpty()){
                     List<Long> ids = apiLogRepository.findIdsByMethodAndEndpoint(method, endpoint);
 
                     if (ids.isEmpty()) {
-                        response.sendError(HttpServletResponse.SC_NOT_FOUND,
-                                "No recorded response found for " + method + " " + endpoint);
+                        servletLogger.info("Routing request to backend as no method + endpoint match found.");
+                        handleRecordingMode(request, response);
+                        //response.sendError(HttpServletResponse.SC_NOT_FOUND, "No recorded response found for " + method + " " + endpoint);
                         return;
                     }
-                    if (ids.size() == 1) {
+                    else if (ids.size() == 1) {
                         replay(apiLogRepository.findById(ids.get(0)), response);
                         return;
                     }
+                    // Step 2: Query parameters
+                    String queryParamsJson = convertQueryParamsToJson(request);
+//                    servletLogger.debug("QueryParams: {}", queryParamsJson);
+                    ids = apiLogRepository.filterIdsByQueryParams(ids, queryParamsJson);
+                    if (ids.isEmpty()) {
+                        //response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after query parameter filtering");
+                        servletLogger.info("No recorded response found at query params");
+                        performVectorSearch(method, endpoint, extractPartialBodyAsJson(request), request, response);
+                        return;
+                    }
+                    else if (ids.size() == 1) {
+                        replay(apiLogRepository.findById(ids.get(0)), response);
+                        return;
+                    }
+                        // Step 3: Headers
+                    String headersJson = convertFilteredHeadersToJson(request);
+                    ids = apiLogRepository.filterIdsByHeaders(ids, headersJson);
 
-                    // Step 2: Headers
-                    // Final fallback: pick most recent
-//                    String headersJson = convertFilteredHeadersToJson(request);
-//                    ids = apiLogRepository.filterIdsByHeaders(ids, headersJson);
-//
-//                    if (ids.isEmpty()) {
-////                        response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after header filtering");
-//                        vector_search = true;
-//                    }
-//                    if (ids.size() == 1) {
-//                        replay(apiLogRepository.findById(ids.get(0)), response);
-//                        return;
-//                    }
-//                    // Step 3: Partial body
-                    JsonNode body = extractPartialBodyAsJson(request);
-                    String bodyJson = extractPartialBodyAsJson(request).toString();
-//                    ids = apiLogRepository.filterIdsByExactBody(ids, bodyJson);
-//
-//                    if (ids.isEmpty()) {
-////                        response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after body filtering");
-//                        vector_search = true;
-//                    }
-//                    if (ids.size() == 1) {
-//                        replay(apiLogRepository.findById(ids.get(0)), response);
-//                        return;
-//                    }
-                    if (!vector_search)
-                    {
+                    if (ids.isEmpty()) {
+                        //response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after header filtering");
+                        servletLogger.info("No recorded response found at headers");
+                        performVectorSearch(method, endpoint, extractPartialBodyAsJson(request), request, response);
+                        return;
+                    }
+                    else if(ids.size() == 1) {
+                        replay(apiLogRepository.findById(ids.get(0)), response);
+                        return;
+                    }
+                    // Step 4: body
+                    JsonNode bodyNode = extractPartialBodyAsJson(request);
+                    String bodyJson = bodyNode != null ? bodyNode.toString(): null;
+                    ids = apiLogRepository.filterIdsByExactBody(ids, bodyJson);
+                    if (ids.isEmpty()) {
+                        //response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after body filtering");
+                        servletLogger.info("No recorded response found at exact body");
+                        performVectorSearch(method, endpoint, extractPartialBodyAsJson(request), request, response);
+                    } else if (ids.size() == 1) {
+                        replay(apiLogRepository.findById(ids.get(0)), response);
+                    } else {
                         List<ApiLog> candidates = apiLogRepository.fetchFullLogsByIds(ids);
                         replay(Optional.of(candidates.get(0)), response);
                     }
-                    else
-                    {
-                        //Perform vector search
-                        System.out.println("Performing vector search");
-                        String embedd_string  = method+endpoint+bodyJson;
-                        ApiLog querylog = new ApiLog();
-                        querylog.setMethod(method);
-                        querylog.setEndpoint(endpoint);
-                        querylog.setCreatedAt(Instant.now());
-                        querylog.setRequestBody(body);
-                        apiLogRepository.save(querylog);
-
-                        float[] vector_query =embeddingModel.createEmbedding(querylog);
-                        List<ApiLog> semantic_similar_query =  elasticLogService.searchFilteredByMethodEndpoint(method,endpoint,vector_query,3);
-                        replay(Optional.of(semantic_similar_query.get(0)), response);
-
-                    }
                 }
-                else{
-                    System.out.println("Replaying request for user configured fields: " + proxyStateService.getCaptureFields() );
+                else if(proxyStateService.getReplayMode().equals("db") && !proxyStateService.getCaptureFields().isEmpty()) {
+                    servletLogger.info("Replaying request for user configured fields: {}", proxyStateService.getCaptureFields());
                     List<String> capturedFields = proxyStateService.getCaptureFields();
                     boolean match_method = capturedFields.contains("method");
                     boolean match_endpoint = capturedFields.contains("endpoint");
                     boolean match_headers = capturedFields.contains("headers");
                     boolean match_request_body = capturedFields.contains("body");
+                    boolean match_query_params = capturedFields.contains("parameters");
+                    boolean rscode2xx = capturedFields.contains("rscode2xx");
+                    boolean rscode3xx = capturedFields.contains("rscode3xx");
+                    boolean rscode4xx = capturedFields.contains("rscode4xx");
+                    boolean rscode5xx = capturedFields.contains("rscode5xx");
+                    String parameters = convertQueryParamsToJson(request);
                     String headers = convertFilteredHeadersToJson(request);
                     String body = extractPartialBodyAsJson(request).toString();
-                    List<ApiLog> candidates = apiLogRepository.findMatchingLogs(match_method, method, match_endpoint, endpoint, match_headers, headers, match_request_body, body );
+                    List<ApiLog> candidates = apiLogRepository.findMatchingLogs(match_method, method,
+                                                                                match_endpoint, endpoint,
+                                                                                match_query_params, parameters,
+                                                                                match_headers, headers,
+                                                                                match_request_body, body,
+                                                                                rscode2xx, rscode3xx, rscode4xx, rscode5xx);
                     if (!candidates.isEmpty()){
                         replay(Optional.of(candidates.get(0)), response);
                     }else{
                         //Route to the backend
-                        System.out.println("No match found after filtering based on user specified config.");
+                        servletLogger.info("Routing the request to backend as no match found.");
+                        handleRecordingMode(request, response);
+                        //response.sendError(HttpServletResponse.SC_NOT_FOUND, "No match found after body filtering");
+                        //servletLogger.info("No match found after filtering based on user specified config.");
                     }
+                }
+                else if(proxyStateService.getReplayMode().equals("vector")) {
+                    performVectorSearch(method, endpoint, extractPartialBodyAsJson(request), request,response);
                 }
 
             } catch (Exception e) {
-                System.err.println("Error in replay mode: " + e.getMessage());
-                e.printStackTrace();
+                servletLogger.error("Error in replay mode: {}", e.getMessage(), e);
                 response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Replay error");
             }
         }
+        private void performVectorSearch(String method, String endpoint, JsonNode bodyJson, CachedBodyHttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+            servletLogger.info("Performing vector search for: {} {}", method, endpoint);
+            String embedd_string  = method+endpoint+bodyJson.toString();
+            ApiLog querylog = new ApiLog();
+            querylog.setMethod(method);
+            querylog.setEndpoint(endpoint);
+            querylog.setCreatedAt(Instant.now());
+            querylog.setRequestBody(bodyJson);
+//            apiLogRepository.save(querylog); //why ?
+
+            float[] vector_query =embeddingModel.createEmbedding(querylog);
+            List<ApiLog> semantic_similar_query =  elasticLogService.searchFilteredByMethodEndpoint(method,endpoint,vector_query,3);
+            if (semantic_similar_query.isEmpty()) {
+//                response.sendError(HttpServletResponse.SC_NOT_FOUND, "No semantic match found");
+                servletLogger.info("No semantic similar query found for: {} {}. Routing to backend.", method, endpoint);
+                handleRecordingMode(request, response);
+                return;
+            }
+            replay(Optional.of(semantic_similar_query.get(0)), response);
+        }
         private void replay(Optional<ApiLog> maybeLog, HttpServletResponse response) throws IOException {
             if (maybeLog.isPresent()) {
-                System.out.println("Replaying API Log: " + maybeLog.get().getId());
+                servletLogger.info("Replaying API Log: {}", maybeLog.get().getId());
                 replayStoredResponse(maybeLog.get(), response);
             } else {
                 response.sendError(HttpServletResponse.SC_NOT_FOUND, "Matching log not found.");
@@ -247,11 +283,15 @@ public class SimpleProxyServer {
                     headers.put(name, values);
                 }
             }
-            System.out.println(new ObjectMapper().writeValueAsString(headers));
+            servletLogger.debug("Filtered headers: {}", new ObjectMapper().writeValueAsString(headers));
             return new ObjectMapper().writeValueAsString(headers);
         }
         private JsonNode extractPartialBodyAsJson(HttpServletRequest request) throws IOException {
-            String body = request.getReader().lines().collect(Collectors.joining(System.lineSeparator()));
+            String body = request.getReader().lines()
+                    .collect(Collectors.joining(System.lineSeparator()));
+            if (body.isEmpty()) {
+                return NullNode.getInstance();
+            }
             return new ObjectMapper().readTree(body);
         }
         private void replayStoredResponse(ApiLog apiLog, HttpServletResponse response) throws IOException {
@@ -279,10 +319,10 @@ public class SimpleProxyServer {
                 }
 
                 response.getWriter().flush();
-                System.out.println("Successfully replayed response for: " + apiLog.getMethod() + " " + apiLog.getEndpoint());
+                servletLogger.info("Successfully replayed response for: {} {}", apiLog.getMethod(), apiLog.getEndpoint());
 
             } catch (IOException e) {
-                System.err.println("Error writing replay response: " + e.getMessage());
+                servletLogger.error("Error writing replay response: {}", e.getMessage(), e);
                 throw e;
             }
         }
@@ -309,20 +349,19 @@ public class SimpleProxyServer {
                     });
                 }
             } catch (Exception e) {
-                System.err.println("Error setting response headers from JSON: " + e.getMessage());
+                servletLogger.error("Error setting response headers from JSON: {}", e.getMessage(), e);
             }
         }
-        private void handleRecordingMode(HttpServletRequest request, HttpServletResponse response)
+        private void handleRecordingMode(CachedBodyHttpServletRequest wrappedRequest, HttpServletResponse response)
                 throws ServletException, IOException {
-
+            servletLogger.info("Handling request in recording mode: {} {}", wrappedRequest.getMethod(), wrappedRequest.getRequestURL());
             try {
                 // 1. Capture request
-                CachedBodyHttpServletRequest wrappedRequest = new CachedBodyHttpServletRequest(request);
                 String requestId = ProxyStateService.INSTANCE.recordRequestWithBody(wrappedRequest);
 
                 if (requestId == null) {
                     // If recording failed, fall back to normal proxy
-                    super.service(request, response);
+                    super.service(wrappedRequest, response);
                     return;
                 }
 
@@ -350,7 +389,7 @@ public class SimpleProxyServer {
                         }
                     }
                 }
-
+//
                 // Copy body if present
                 byte[] bodyBytes = wrappedRequest.getBodyBytes();
                 if (bodyBytes != null && bodyBytes.length > 0) {
@@ -376,11 +415,11 @@ public class SimpleProxyServer {
                                 responseBodyFuture.complete(responseBody);
 
                             } catch (Exception e) {
-                                System.err.println("Error processing response: " + e.getMessage());
+                                servletLogger.error("Error processing response: {}", e.getMessage(), e);
                                 responseBodyFuture.completeExceptionally(e);
                             }
                         } else {
-                            System.err.println("Request failed: " + result.getFailure().getMessage());
+                            servletLogger.error("Request failed: {}", result.getFailure().getMessage(), result.getFailure());
                             responseBodyFuture.completeExceptionally(result.getFailure());
                         }
                     }
@@ -390,13 +429,12 @@ public class SimpleProxyServer {
                 try {
                     responseBodyFuture.get(30, TimeUnit.SECONDS);
                 } catch (Exception e) {
-                    System.err.println("Timeout or error waiting for response: " + e.getMessage());
+                    servletLogger.error("Timeout or error waiting for response: {}", e.getMessage(), e);
                     response.sendError(HttpServletResponse.SC_GATEWAY_TIMEOUT, "Proxy timeout");
                 }
 
             } catch (Exception e) {
-                System.err.println("Error in recording mode: " + e.getMessage());
-                e.printStackTrace();
+                servletLogger.error("Error in recording mode: {}", e.getMessage(), e);
                 response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Proxy error");
             }
         }
@@ -412,9 +450,9 @@ public class SimpleProxyServer {
             if (host != null && !host.isEmpty()) {
                 String scheme = request.isSecure() ? "https" : "http";
                 targetUrl = scheme + "://" + host + requestUri;
-//                if (queryString != null && !queryString.isEmpty()) {
-//                    targetUrl += "?" + queryString;
-//                }
+                if (queryString != null && !queryString.isEmpty()) {
+                    targetUrl += "?" + queryString;
+                }
             }
 
             return targetUrl;
@@ -441,7 +479,7 @@ public class SimpleProxyServer {
                 }
 
             } catch (IOException e) {
-                System.err.println("Error copying response to client: " + e.getMessage());
+                servletLogger.error("Error copying response to client: {}", e.getMessage(), e);
             }
         }
 
@@ -462,7 +500,7 @@ public class SimpleProxyServer {
         protected void sendProxyRequest(HttpServletRequest clientRequest,
                                         HttpServletResponse proxyResponse,
                                         Request proxyRequest) {
-            System.out.println("Proxying (non-recording): " + clientRequest.getMethod() + " " + clientRequest.getRequestURL());
+            servletLogger.info("Proxying (non-recording): {} {}", clientRequest.getMethod(), clientRequest.getRequestURL());
             super.sendProxyRequest(clientRequest, proxyResponse, proxyRequest);
         }
 
@@ -470,7 +508,7 @@ public class SimpleProxyServer {
         protected void onProxyResponseSuccess(HttpServletRequest clientRequest,
                                               HttpServletResponse proxyResponse,
                                               Response serverResponse) {
-            System.out.println("Response (non-recording): " + serverResponse.getStatus());
+            servletLogger.info("Response (non-recording): {}", serverResponse.getStatus());
             super.onProxyResponseSuccess(clientRequest, proxyResponse, serverResponse);
         }
 
@@ -479,7 +517,7 @@ public class SimpleProxyServer {
                                               HttpServletResponse proxyResponse,
                                               Response serverResponse,
                                               Throwable failure) {
-            System.out.println("Proxy response failed: " + failure.getMessage());
+            servletLogger.error("Proxy response failed: {}", failure.getMessage(), failure);
             super.onProxyResponseFailure(clientRequest, proxyResponse, serverResponse, failure);
         }
 

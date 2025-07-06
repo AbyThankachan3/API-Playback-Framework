@@ -7,6 +7,7 @@ import com.ProxyInterceptor.HTTPInterceptor.Proxy.CachedBodyHttpServletRequest;
 import com.ProxyInterceptor.HTTPInterceptor.Repository.ApiLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -14,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.eclipse.jetty.client.Response;
 import org.eclipse.jetty.http.HttpField;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,10 +33,12 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
+@Slf4j
 public class ProxyStateService {
     public static ProxyStateService INSTANCE;
+    private boolean replayMode = false; //false implies db search and true implies vector search
     private RecordingState mode = RecordingState.OFF;
-    private Path outputFolder = Paths.get("recordings");
+//    private Path outputFolder = Paths.get("recordings");
     private final ObjectMapper objectMapper = new ObjectMapper();
     @Getter
     @Setter
@@ -56,12 +60,12 @@ public class ProxyStateService {
         // Set the static instance when Spring creates this bean
         INSTANCE = this;
         // Ensure recordings directory exists
-        try {
-            Files.createDirectories(outputFolder);
-        } catch (Exception e) {
-            System.err.println("Failed to create recordings directory: " + e.getMessage());
-        }
-        System.out.println("ProxyStateService initialized - INSTANCE set");
+//        try {
+//            Files.createDirectories(outputFolder);
+//        } catch (Exception e) {
+//            log.error("Failed to create recordings directory: {}", e.getMessage(), e);
+//        }
+        log.info("ProxyStateService initialized - INSTANCE set");
     }
 
     public synchronized RecordingState getMode() {
@@ -70,21 +74,20 @@ public class ProxyStateService {
 
     public synchronized void setMode(RecordingState mode) {
         this.mode = mode;
-        System.out.println("Mode changed to: " + mode + " (isRecording: " + isRecording() + ")");
     }
 
-    public synchronized Path getOutputFolder() {
-        return outputFolder;
-    }
+//    public synchronized Path getOutputFolder() {
+//        return outputFolder;
+//    }
 
-    public synchronized void setOutputFolder(String folder) {
-        this.outputFolder = Paths.get(folder);
-        try {
-            Files.createDirectories(this.outputFolder);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to create folder: " + folder, e);
-        }
-    }
+//    public synchronized void setOutputFolder(String folder) {
+//        this.outputFolder = Paths.get(folder);
+//        try {
+//            Files.createDirectories(this.outputFolder);
+//        } catch (Exception e) {
+//            throw new RuntimeException("Failed to create folder: " + folder, e);
+//        }
+//    }
 
     public boolean isRecording() {
         return this.mode == RecordingState.RECORD;
@@ -100,7 +103,7 @@ public class ProxyStateService {
 
     private void addFormattedBody(ObjectNode parentNode, String body, String contentType, String bodyFieldName) {
         if (body == null || body.trim().isEmpty()) {
-            parentNode.put(bodyFieldName, "");
+            parentNode.put(bodyFieldName, NullNode.getInstance());
             return;
         }
 
@@ -111,7 +114,7 @@ public class ProxyStateService {
                 JsonNode jsonNode = objectMapper.readTree(body);
                 parentNode.set(bodyFieldName, jsonNode);
             } catch (JsonProcessingException e) {
-                System.out.println("Could not parse body as JSON, storing as string: " + e.getMessage());
+                log.debug("Could not parse body as JSON, storing as string: {}", e.getMessage());
                 parentNode.put(bodyFieldName, body);
             }
         } else {
@@ -123,7 +126,7 @@ public class ProxyStateService {
 
     public String recordRequestWithBody(CachedBodyHttpServletRequest req) {
         try {
-            System.out.println("recordRequestWithBody called for: " + req.getMethod() + " " + req.getRequestURL());
+            log.debug("recordRequestWithBody called for: {} {}", req.getMethod(), req.getRequestURL());
 
             String requestId = UUID.randomUUID().toString();
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
@@ -183,23 +186,22 @@ public class ProxyStateService {
             // Store the request data with requestId for later pairing with response
             pendingRequests.put(requestId, requestJson);
 
-            System.out.println("Request with body stored with ID: " + requestId);
+            log.debug("Request with body stored with ID: {}", requestId);
             return requestId;
 
         } catch (Exception e) {
-            System.err.println("Error recording request with body: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Error recording request with body: {}", e.getMessage(), e);
             return null;
         }
     }
 
     public void recordResponseWithBody(Response res, String requestId, String responseBody) {
         try {
-            System.out.println("recordResponseWithBody called for request ID: " + requestId);
+            log.debug("recordResponseWithBody called for request ID: {}", requestId);
 
             ObjectNode requestJson = pendingRequests.remove(requestId);
             if (requestJson == null) {
-                System.err.println("No pending request found for ID: " + requestId);
+                log.error("No pending request found for ID: {}", requestId);
                 return;
             }
 
@@ -250,40 +252,54 @@ public class ProxyStateService {
             transactionJson.set("response", responseJson);
 
             // Save to file
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String method = requestJson.get("method").asText();
-            String name = "transaction_" + method + "_" + timestamp + "_" + requestId.substring(0, 8) + ".json";
-            Path filePath = outputFolder.resolve(name);
+//            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+//            String method = requestJson.get("method").asText();
+//            String name = "transaction_" + method + "_" + timestamp + "_" + requestId.substring(0, 8) + ".json";
+//            Path filePath = outputFolder.resolve(name);
+//
+//            try (FileWriter writer = new FileWriter(filePath.toFile(), StandardCharsets.UTF_8)) {
+//                writer.write(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(transactionJson));
+//            }
+//
+//            log.info("Saved transaction with bodies: {}", filePath);
 
-            try (FileWriter writer = new FileWriter(filePath.toFile(), StandardCharsets.UTF_8)) {
-                writer.write(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(transactionJson));
-            }
+            ApiLog apiLog = new ApiLog();
+            apiLog.setMethod(requestJson.get("method").asText());
+            apiLog.setEndpoint(requestJson.get("url").asText());
+            apiLog.setStatusCode(res.getStatus());
+            apiLog.setCreatedAt(Instant.now());
 
-            System.out.println("Saved transaction with bodies: " + filePath);
-            ApiLog log = new ApiLog();
-            log.setMethod(requestJson.get("method").asText());
-            log.setEndpoint(requestJson.get("url").asText());
-            log.setStatusCode(res.getStatus());
-            log.setCreatedAt(Instant.now());
+            apiLog.setRequestBody(requestJson.get("body"));
+            apiLog.setResponseBody(responseJson.get("body"));
+            apiLog.setParameters(requestJson.get("parameters"));
+            apiLog.setHeaders(requestJson.get("headers"));
+            apiLog.setResponseHeaders(responseJson.get("headers"));
 
-            log.setRequestBody(requestJson.get("body"));
-            log.setResponseBody(responseJson.get("body"));
-            log.setParameters(requestJson.get("parameters"));
-            log.setHeaders(requestJson.get("headers"));
-            log.setResponseHeaders(responseJson.get("headers"));
-//            apiLogRepository.save(log);
-            System.out.println("Saved transaction to database with method: " + log.getMethod() + ", endpoint: " + log.getEndpoint());
-
-
-            float[] vector = embeddingModel.createEmbedding(log);
-            log.setEmbedding(vector);
-            apiLogRepository.save(log);
-            elasticLogService.saveToElastic(log);
-            System.out.println("DB query added to elastic.");
+//            float[] vector = embeddingModel.createEmbedding(apiLog);
+//            apiLog.setEmbedding(vector);
+            apiLogRepository.save(apiLog);
+            log.info("Saved transaction to database with method: {}, endpoint: {}", apiLog.getMethod(), apiLog.getEndpoint());
+//            elasticLogService.saveToElastic(apiLog);
+//            log.info("DB query added to elastic.");
 
         } catch (Exception e) {
-            System.err.println("Error recording response with body: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Error recording response with body: {}", e.getMessage(), e);
+        }
+    }
+
+    public void setReplayMode(String vector) {
+        if(vector.equals("vector")) {
+            this.replayMode = true;
+        } else if(vector.equals("db")) {
+            this.replayMode = false;
+        }
+    }
+
+    public String getReplayMode() {
+        if (replayMode) {
+            return "vector";
+        } else {
+            return "db";
         }
     }
 }

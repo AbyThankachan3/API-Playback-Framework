@@ -4,3 +4,4 @@ CREATE INDEX IF NOT EXISTS idx_parameters_jsonb ON api_log USING GIN (parameters
 CREATE INDEX IF NOT EXISTS idx_headers_jsonb ON api_log USING GIN (headers jsonb_path_ops);
 CREATE INDEX IF NOT EXISTS idx_request_body_jsonb ON api_log USING GIN (request_body jsonb_path_ops);
 CREATE INDEX IF NOT EXISTS idx_created_at ON api_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_status_code ON api_log(status_code ASC);

@@ -1,0 +1,45 @@
+{
+  "request" : {
+    "timestamp" : "2025-07-05T22:41:45.746238300",
+    "method" : "POST",
+    "url" : "http://localhost:8085/event/scan-attendance",
+    "queryString" : "qrData=syncora:attendance:event=1;user=221203;exp=1744805543;sig=oitVxFTSgT-leZV0S2RwPd4omuDTgNZezaxy_BA9xiU",
+    "protocol" : "HTTP/1.1",
+    "remoteAddr" : "[0:0:0:0:0:0:0:1]",
+    "contentType" : null,
+    "contentLength" : 0,
+    "headers" : {
+      "User-Agent" : [ "PostmanRuntime/7.44.1" ],
+      "Accept" : [ "*/*" ],
+      "Postman-Token" : [ "1179e852-21d1-458f-b416-f804a9f67e46" ],
+      "Host" : [ "localhost:8085" ],
+      "Accept-Encoding" : [ "gzip, deflate, br" ],
+      "Connection" : [ "keep-alive" ],
+      "Cookie" : [ "refresh=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYnl0aGFua2FjaGFuLjMxNEBnbWFpbC5jb20iLCJpYXQiOjE3NTEyMTIyMDQsImV4cCI6MTc1MTgxNzAwNH0.ONXd_DacJ_J3z2qPxGZ0cquYrMJ4ncBLYx91-Twf-WM" ],
+      "Content-Length" : [ "0" ]
+    },
+    "parameters" : {
+      "qrData" : "syncora:attendance:event=1;user=221203;exp=1744805543;sig=oitVxFTSgT-leZV0S2RwPd4omuDTgNZezaxy_BA9xiU"
+    },
+    "body" : ""
+  },
+  "response" : {
+    "timestamp" : "2025-07-05T22:41:45.818121400",
+    "status" : 401,
+    "reason" : null,
+    "version" : "HTTP/1.1",
+    "headers" : {
+      "Vary" : [ "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers" ],
+      "WWW-Authenticate" : "Basic realm=\"Realm\"",
+      "X-Content-Type-Options" : "nosniff",
+      "X-XSS-Protection" : "0",
+      "Cache-Control" : "no-cache, no-store, max-age=0, must-revalidate",
+      "Pragma" : "no-cache",
+      "Expires" : "0",
+      "X-Frame-Options" : "DENY",
+      "Content-Length" : "0",
+      "Date" : "Sat, 05 Jul 2025 17:11:45 GMT"
+    },
+    "body" : ""
+  }
+}

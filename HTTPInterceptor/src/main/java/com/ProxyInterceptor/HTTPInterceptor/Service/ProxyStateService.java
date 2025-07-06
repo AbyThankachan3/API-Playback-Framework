@@ -275,12 +275,12 @@ public class ProxyStateService {
             apiLog.setHeaders(requestJson.get("headers"));
             apiLog.setResponseHeaders(responseJson.get("headers"));
 
-//            float[] vector = embeddingModel.createEmbedding(apiLog);
-//            apiLog.setEmbedding(vector);
+            float[] vector = embeddingModel.createEmbedding(apiLog);
+            apiLog.setEmbedding(vector);
             apiLogRepository.save(apiLog);
             log.info("Saved transaction to database with method: {}, endpoint: {}", apiLog.getMethod(), apiLog.getEndpoint());
-//            elasticLogService.saveToElastic(apiLog);
-//            log.info("DB query added to elastic.");
+            elasticLogService.saveToElastic(apiLog);
+            log.info("DB query added to elastic.");
 
         } catch (Exception e) {
             log.error("Error recording response with body: {}", e.getMessage(), e);

@@ -40,52 +40,46 @@ public class ElasticLogService {
         }
     }
 
-    public List<ApiLog> searchFilteredByMethodEndpoint(String method, String endpoint, float[] queryVec, int topK)
-    {
-        try
-        {
-            // 1) Box float[] into List<Float>
+    public List<ApiLog> searchFilteredByMethodEndpoint(String method, String endpoint, float[] queryVec, int topK) {
+        try {
+            // Convert float[] to List<Float>
             List<Float> qvList = new ArrayList<>(queryVec.length);
-            for (float v : queryVec)
-            {
+            for (float v : queryVec) {
                 qvList.add(v);
             }
-
-            // 2) Wrap the list in JsonData
             JsonData qvJson = JsonData.of(qvList);
 
-            // 3) Build an InlineScript containing your Painless code
-            Script simScript = Script.of(s -> s
+            // Define the similarity script
+            Script script = Script.of(s -> s
                     .inline(i -> i
-                            .source("cosineSimilarity(params.qv, 'embedding') + 1.0")
                             .lang("painless")
+                            .source("cosineSimilarity(params.qv, 'embedding') + 1.0")
                             .params(Map.of("qv", qvJson))
                     )
             );
 
-            // 4) Compose the hybrid script_score query
-            Query hybrid = Query.of(q -> q
+            // Build the query using .keyword fields for exact matches
+            Query hybridQuery = Query.of(q -> q
                     .scriptScore(ss -> ss
-                            // exact-match filter
-                            .query(inner -> inner
-                                    .bool(BoolQuery.of(b -> b
-                                            .must(m -> m.term(t -> t.field("method").value(method)))
-                                            .must(m -> m.term(t -> t.field("endpoint").value(endpoint)))
-                                    ))
-                            )
-                            // attach our InlineScript
-                            .script(simScript)
+                            .query(q2 -> q2.bool(b -> b
+                                    .must(m1 -> m1.term(t -> t.field("method.keyword").value(method)))
+                                    .must(m2 -> m2.term(t -> t.field("endpoint.keyword").value(endpoint)))
+                            ))
+                            .script(script)
                     )
             );
 
-            // 5) Execute it
+            // Compose the search request
             SearchRequest sr = SearchRequest.of(r -> r
                     .index("api-logs")
+                    .query(hybridQuery)
+                    .minScore(1.8) // cosine similarity >= 0.8
                     .size(topK)
             );
-            SearchResponse<ApiLog> resp = esClient.search(sr, ApiLog.class);
 
-            return resp.hits().hits().stream()
+            // Execute and return results
+            SearchResponse<ApiLog> response = esClient.search(sr, ApiLog.class);
+            return response.hits().hits().stream()
                     .map(Hit::source)
                     .toList();
 
@@ -93,5 +87,7 @@ public class ElasticLogService {
             throw new RuntimeException("Elasticsearch hybrid search failed", e);
         }
     }
+
+
 }
 

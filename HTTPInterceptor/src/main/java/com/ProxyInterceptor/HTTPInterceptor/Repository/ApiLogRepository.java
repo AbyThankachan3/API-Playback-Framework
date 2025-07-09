@@ -47,18 +47,23 @@ public interface ApiLogRepository extends JpaRepository<ApiLog, Long>
     List<ApiLog> fetchFullLogsByIds(@Param("ids") List<Long> ids);
 
     @Query(
-            value = "Select * from api_log where (:match_method IS FALSE OR method = :method) AND " +
-                    "(:match_endpoint is FALSE OR endpoint = :endpoint) AND " +
-                    "(:match_query_params IS FALSE OR parameters @> CAST(:parameters as jsonb)) AND " +
+            value = "SELECT * FROM api_log WHERE " +
+                    "(:match_method IS FALSE OR method = :method) AND " +
+                    "(:match_endpoint IS FALSE OR endpoint = :endpoint) AND " +
+                    "(:match_query_params IS FALSE OR parameters @> CAST(:parameters AS jsonb)) AND " +
                     "(:match_headers IS FALSE OR headers @> CAST(:headers AS jsonb)) AND " +
-                    "(:match_request_body IS FALSE OR request_body = CAST(:request_body AS jsonb)) AND " +
-                    "(:match_rscode2xx IS FALSE OR status_code BETWEEN 200 AND 299) AND" +
-                    "(:match_rscode3xx IS FALSE OR status_code BETWEEN 300 AND 399) AND " +
-                    "(:match_rscode4xx IS FALSE OR status_code BETWEEN 400 AND 499) AND " +
-                    "(:match_rscode5xx IS FALSE OR status_code BETWEEN 500 AND 599) " +
+                    "(:match_request_body IS FALSE OR request_body = CAST(:request_body AS jsonb)) AND (" +
+                    "(:match_rscode2xx IS FALSE AND :match_rscode3xx IS FALSE AND :match_rscode4xx IS FALSE AND :match_rscode5xx IS FALSE) OR (" +
+                    "(:match_rscode2xx IS TRUE AND status_code BETWEEN 200 AND 299) OR " +
+                    "(:match_rscode3xx IS TRUE AND status_code BETWEEN 300 AND 399) OR " +
+                    "(:match_rscode4xx IS TRUE AND status_code BETWEEN 400 AND 499) OR " +
+                    "(:match_rscode5xx IS TRUE AND status_code BETWEEN 500 AND 599)" +
+                    ")" +
+                    ") " +
                     "ORDER BY created_at DESC",
             nativeQuery = true
     )
+
     List<ApiLog> findMatchingLogs(@Param("match_method") boolean matchMethod,
                                   @Param("method") String method,
                                   @Param("match_endpoint") boolean matchEndpoint,
